@@ -1,0 +1,51 @@
+import gurobipy as gp
+from gurobipy import GRB
+
+n = 100              # The number of tasks
+m = 10              # The number of drivers
+b = 0.02             # Deterioration effect
+t0 = 0.113           # The earliest available time
+U = 1000000.0       # A large constant
+# The loading times θ_L_i for each task, sorted by task priority α_i
+theta = [1.388, 0.772, 1.029, 0.945, 1.402, 0.297, 0.511, 0.68, 1.015, 0.757, 1.06, 1.521, 0.438, 1.902, 0.535, 0.308, 1.484, 1.027, 0.386, 1.889, 0.656, 1.049, 1.925, 0.255, 1.101, 1.989, 1.279, 0.91, 1.86, 1.658, 1.791, 1.246, 1.8, 1.164, 0.36, 1.58, 0.752, 0.917, 1.485, 1.811, 1.431, 0.679, 0.476, 1.184, 1.658, 1.848, 0.567, 1.692, 1.003, 1.743, 0.9, 1.839, 1.248, 1.816, 1.641, 1.561, 0.702, 1.311, 0.38, 1.106, 0.622, 0.763, 0.356, 1.07, 0.978, 0.383, 0.757, 1.879, 0.61, 0.366, 0.837, 0.654, 1.939, 1.953, 1.259, 1.187, 0.846, 1.113, 1.173, 0.904, 1.602, 1.712, 1.458, 1.306, 1.252, 0.282, 1.729, 1.173, 1.678, 1.655, 1.701, 1.595, 1.261, 1.372, 1.87, 1.16, 1.974, 0.883, 1.435, 1.412]
+# The transportation times T_i for each task, sorted by task priority α_i
+T = [1.052, 1.469, 1.141, 1.39, 1.209, 1.955, 1.948, 1.374, 1.913, 1.751, 1.704, 1.973, 2.181, 1.627, 2.441, 2.586, 1.762, 2.329, 2.78, 1.941, 2.211, 2.663, 2.329, 2.627, 2.491, 1.554, 1.952, 2.314, 2.189, 1.783, 2.007, 2.261, 2.097, 2.526, 2.727, 2.606, 2.762, 2.373, 2.608, 2.21, 2.978, 2.828, 3.34, 2.739, 2.573, 2.904, 3.325, 2.454, 3.179, 2.937, 3.709, 3.082, 2.957, 3.182, 2.974, 3.217, 4.355, 3.953, 4.225, 3.474, 3.926, 4.266, 4.639, 3.959, 4.332, 4.474, 4.502, 3.367, 4.638, 4.414, 4.452, 4.143, 3.376, 3.995, 4.406, 4.497, 3.88, 3.758, 4.094, 4.722, 3.969, 4.204, 4.355, 4.884, 4.915, 4.919, 4.269, 4.3, 4.671, 4.456, 4.718, 4.681, 4.875, 4.544, 4.49, 4.634, 4.24, 4.668, 4.738, 4.767]
+# The unloading times θ_U_i for each task, sorted by task priority α_i
+Z = [0.761, 1.01, 1.435, 1.122, 1.16, 0.834, 0.77, 1.806, 0.608, 1.328, 1.163, 0.258, 1.091, 0.739, 0.56, 0.529, 0.988, 0.388, 0.251, 0.445, 1.56, 0.269, 0.464, 1.586, 1.013, 1.989, 1.96, 1.626, 0.961, 1.976, 1.487, 1.542, 1.32, 1.146, 1.599, 0.619, 1.168, 1.857, 0.905, 1.37, 0.297, 1.371, 0.685, 1.158, 1.047, 0.289, 0.826, 1.576, 0.918, 0.878, 0.573, 0.982, 1.899, 0.889, 1.661, 1.437, 0.219, 0.402, 0.927, 1.718, 1.356, 0.57, 0.265, 0.982, 0.352, 0.696, 0.313, 1.43, 0.268, 0.97, 0.544, 1.392, 1.67, 0.431, 0.372, 0.296, 1.959, 1.994, 1.388, 0.615, 1.548, 1.121, 1.123, 0.364, 0.501, 1.487, 1.325, 1.932, 0.715, 1.215, 0.658, 0.917, 0.884, 1.486, 1.09, 1.655, 1.646, 1.955, 1.374, 1.604]
+
+model = gp.Model("TaskAllocation")
+model.Params.TimeLimit = 1200
+model.Params.OptimalityTol = 1e-9
+model.Params.IntFeasTol = 1e-9
+model.Params.FeasibilityTol = 1e-9
+C = model.addVars(m, n+1, vtype=GRB.CONTINUOUS, name="C")
+X = model.addVars(m, n, vtype=GRB.BINARY, name="X")
+c_max = model.addVar(vtype=GRB.CONTINUOUS, name="c_max")
+
+for i in range(n):
+    model.addConstr(gp.quicksum(X[k, i] for k in range(m)) == 1, f"Assign_{i}")
+
+for k in range(m):
+    model.addConstr(C[k, 0] == t0, f"Init_C_{k}")
+
+for k in range(m):
+    for i in range(1, n+1):
+        for l in range(i):
+            model.addConstr(
+                C[k, i] + U * (1 - X[k, i-1]) >= (b+1)**2 * (C[k, l] + theta[i-1]) + (b+2)*T[i-1] + (b+1)*Z[i-1],
+                f"Order_{k}_{i}_{l}"
+            )
+
+model.addConstrs((c_max >= C[k, i] for k in range(m) for i in range(1, n+1)), "MaxTime")
+
+model.setObjective(c_max, GRB.MINIMIZE)
+
+model.optimize()
+
+if model.status == GRB.OPTIMAL:
+    print(f"Minimized maximum completion time: {c_max.X:.2f}")
+    for k in range(m):
+        assigned_tasks = [i+1 for i in range(n) if X[k, i].X > 0.5]
+        print(f"Tasks assigned to driver {k+1}: {assigned_tasks}")
+else:
+    print("Optimal solution not found")
